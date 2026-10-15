@@ -4,10 +4,34 @@ require 'net/http'
 require 'json'
 require 'uri'
 require 'time'
+require 'openssl'
 
 class StockChartApp < Sinatra::Base
   set :public_folder, File.join(__dir__, 'public')
-  set :views, File.join(__dir__, 'views')
+
+  API_BASE = 'https://api.twelvedata.com'.freeze
+
+  def self.fetch_api(path, params)
+    uri = URI("#{API_BASE}#{path}")
+    uri.query = URI.encode_www_form(params)
+
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+    http.open_timeout = 10
+    http.read_timeout = 20
+
+    response = http.request(Net::HTTP::Get.new(uri))
+    data = JSON.parse(response.body)
+
+    [response.is_a?(Net::HTTPSuccess), data]
+  rescue StandardError => e
+    warn "Twelve Data request error: #{e.class}: #{e.message}"
+    [false, {}]
+  end
+
+  def self.api_key
+    ENV['TWELVE_DATA_API_KEY'].to_s.strip
+  end
 
   get '/' do
     send_file File.join(settings.public_folder, 'index.html')
@@ -18,32 +42,33 @@ class StockChartApp < Sinatra::Base
 
     query = params['q'].to_s.strip
     halt 400, { error: 'Query is required' }.to_json if query.empty?
+    halt 500, { error: 'API key is not configured' }.to_json if self.class.api_key.empty?
 
-    uri = URI('https://query1.finance.yahoo.com/v1/finance/search')
-    uri.query = URI.encode_www_form(
-      q: query,
-      quotesCount: 10,
-      newsCount: 0
+    success, data = self.class.fetch_api(
+      '/symbol_search',
+      {
+        symbol: query,
+        outputsize: 10,
+        apikey: self.class.api_key
+      }
     )
 
-    response = Net::HTTP.get_response(uri)
-    halt 502, { error: 'Stock search is unavailable' }.to_json unless response.is_a?(Net::HTTPSuccess)
+    if !success || data['status'] == 'error'
+      warn "Stock search failed: #{data['message']}"
+      halt 502, { error: 'Unable to search stocks right now' }.to_json
+    end
 
-    data = JSON.parse(response.body)
-    results = Array(data['quotes']).filter_map do |quote|
-      next unless quote['symbol']
+    results = Array(data['data']).filter_map do |item|
+      next unless item['symbol']
 
       {
-        symbol: quote['symbol'],
-        name: quote['shortname'] || quote['longname'] || quote['symbol'],
-        exchange: quote['exchange']
+        symbol: item['symbol'],
+        name: item['instrument_name'] || item['symbol'],
+        exchange: item['exchange'] || item['country'] || ''
       }
     end
 
     results.to_json
-  rescue StandardError => e
-    warn "Search error: #{e.class}: #{e.message}"
-    halt 502, { error: 'Unable to search stocks right now' }.to_json
   end
 
   get '/api/chart' do
@@ -54,44 +79,50 @@ class StockChartApp < Sinatra::Base
 
     halt 400, { error: 'Symbol is required' }.to_json if symbol.empty?
 
-    allowed_ranges = %w[1d 5d 1wk 1mo 1y]
-    halt 400, { error: 'Invalid range' }.to_json unless allowed_ranges.include?(range)
+    ranges = {
+      '1d'  => ['5min', 78],
+      '5d'  => ['15min', 130],
+      '1wk' => ['1day', 7],
+      '1mo' => ['1day', 30],
+      '1y'  => ['1day', 252]
+    }
 
-    uri = URI(
-      "https://query1.finance.yahoo.com/v8/finance/chart/#{URI.encode_www_form_component(symbol)}"
+    halt 400, { error: 'Invalid range' }.to_json unless ranges.key?(range)
+    halt 500, { error: 'API key is not configured' }.to_json if self.class.api_key.empty?
+
+    interval, outputsize = ranges[range]
+
+    success, data = self.class.fetch_api(
+      '/time_series',
+      {
+        symbol: symbol,
+        interval: interval,
+        outputsize: outputsize,
+        apikey: self.class.api_key
+      }
     )
-    uri.query = URI.encode_www_form(
-      range: range,
-      interval: range == '1d' ? '5m' : (range == '5d' ? '15m' : '1d')
-    )
 
-    response = Net::HTTP.get_response(uri)
-    halt 502, { error: 'Stock data is unavailable' }.to_json unless response.is_a?(Net::HTTPSuccess)
+    if !success || data['status'] == 'error' || !data['values']
+      warn "Stock chart failed: #{data['message']}"
+      halt 502, {
+        error: data['message'] || 'Unable to load stock data right now'
+      }.to_json
+    end
 
-    payload = JSON.parse(response.body)
-    result = payload.dig('chart', 'result', 0)
-    halt 404, { error: 'No chart data found' }.to_json unless result
-
-    timestamps = result['timestamp'] || []
-    indicators = result.dig('indicators', 'quote', 0) || {}
-    closes = indicators['close'] || []
-
-    points = timestamps.zip(closes).filter_map do |timestamp, close|
-      next if timestamp.nil? || close.nil?
+    points = Array(data['values']).filter_map do |item|
+      close = Float(item['close'], exception: false)
+      next unless close && item['datetime']
 
       {
-        time: Time.at(timestamp).utc.iso8601,
+        time: Time.parse("#{item['datetime']} UTC").utc.iso8601,
         price: close
       }
-    end
+    end.reverse
 
     {
       symbol: symbol,
-      currency: result.dig('meta', 'currency'),
+      currency: data.dig('meta', 'currency'),
       points: points
     }.to_json
-  rescue StandardError => e
-    warn "Chart error: #{e.class}: #{e.message}"
-    halt 502, { error: 'Unable to load chart data right now' }.to_json
   end
 end
