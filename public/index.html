@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b1220">
+    <title>StockScope — Stock Market Explorer</title>
+    <link rel="stylesheet" href="/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1"></script>
+    <script src="/app.js" defer></script>
+</head>
+
+<body>
+    <header class="topbar">
+        <a class="brand" href="/">
+            <span class="brand-icon">S</span>
+            <span>StockScope</span>
+        </a>
+        <span class="live-label"><span class="dot"></span> MARKET EXPLORER</span>
+    </header>
+
+    <main class="container">
+        <section class="hero">
+            <p class="eyebrow">YOUR MARKET, YOUR VIEW</p>
+            <h1>Explore the market.</h1>
+            <p class="subtitle">
+                Search a company, choose a time range, and explore its stock price.
+            </p>
+        </section>
+
+        <section class="search-section">
+            <label for="stock-search">Find a stock</label>
+            <div class="search-wrap">
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <input id="stock-search" type="text" placeholder="Search Apple, AAPL, Microsoft..." autocomplete="off"
+                    aria-autocomplete="list" aria-controls="suggestions">
+                <span id="search-spinner" class="spinner hidden"></span>
+                <ul id="suggestions" role="listbox" class="suggestions hidden"></ul>
+            </div>
+            <p class="hint">Try AAPL, MSFT, GOOGL or NVDA.</p>
+        </section>
+
+        <section class="chart-card">
+            <div class="stock-heading">
+                <div>
+                    <p class="eyebrow">SELECTED STOCK</p>
+                    <h2 id="stock-name">Choose a stock</h2>
+                    <p id="stock-symbol" class="stock-symbol">
+                        Search above to get started
+                    </p>
+                </div>
+                <div class="price-block">
+                    <span id="latest-price" class="latest-price">—</span>
+                    <span id="price-caption" class="price-caption">Latest available close</span>
+                </div>
+            </div>
+
+            <div class="range-toolbar" role="group" aria-label="Chart time range">
+                <button class="range-button active" data-range="1d">1D</button>
+                <button class="range-button" data-range="5d">5D</button>
+                <button class="range-button" data-range="1wk">1W</button>
+                <button class="range-button" data-range="1mo">1M</button>
+                <button class="range-button" data-range="1y">1Y</button>
+            </div>
+
+            <div id="chart-status" class="status" role="status">
+                Search for a stock to display its price chart.
+            </div>
+
+            <div class="chart-wrap">
+                <canvas id="stock-chart" aria-label="Stock price chart"></canvas>
+            </div>
+
+            <p class="disclaimer">
+                Market data may be delayed. This app is for educational purposes only
+                and does not provide investment advice.
+            </p>
+        </section>
+
+        <footer>
+            <span>StockScope</span>
+            <span>Built with Ruby, Sinatra & Chart.js</span>
+        </footer>
+    </main>
+</body>
+
+</html>
