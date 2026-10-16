@@ -15,4 +15,5 @@ ENV PORT=8080
 
 EXPOSE 8080
 
-CMD ["bundle", "exec", "puma", "-C", "config.ru", "-b", "tcp://0.0.0.0:8080"]
+CMD ["bundle", "exec", "puma", "-p", "8080", "config.ru"]
+
